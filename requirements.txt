@@ -1,0 +1,8 @@
+nltk
+numpy
+scikit-learn
+transformers
+tensorflow[and-cuda]
+tf-keras
+pillow
+opencv-python
