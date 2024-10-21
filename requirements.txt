@@ -6,3 +6,12 @@ tensorflow[and-cuda]
 tf-keras
 pillow
 opencv-python
+requests
+librosa
+python-magic
+joblib
+StrEnum
+spacy
+torch
+requests
+beautifulsoup4
