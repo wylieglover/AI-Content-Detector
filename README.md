@@ -1,4 +1,6 @@
 # AI Content Detector
+![image](https://github.com/user-attachments/assets/5953cad2-1b5c-433b-9378-ac9feb48b71f)
+
 
 ## Project Description
 
