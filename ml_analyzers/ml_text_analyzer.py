@@ -18,6 +18,18 @@ class MLTextAnalyzer:
         self.classifier = HybridClassifier(self.input_size).to(self.device)
         self.classifier.load_state_dict(torch.load('models/hybrid_classifier.pt', weights_only=True, map_location=self.device))
         self.classifier.eval()
+        
+        self.reset_metrics()
+
+    def reset_metrics(self):
+        self.true_labels = []
+        self.predictions = []
+        self.probabilities = []
+
+    def store_prediction(self, true_label, prediction, probability):
+        self.true_labels.append(true_label)
+        self.predictions.append(prediction)
+        self.probabilities.append(probability)
 
     def calculate_text_num_numerical_features(self):
         # Calculate the number of numerical features based on your feature extraction
