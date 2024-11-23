@@ -1,2 +1,3 @@
 __pycache__
 ai_content_detector.log
+models/data/*

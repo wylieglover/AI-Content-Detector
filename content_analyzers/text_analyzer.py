@@ -4,49 +4,71 @@ from nltk import ngrams, FreqDist
 from collections import Counter
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.preprocessing import OneHotEncoder
 from transformers import pipeline
 from .base_analyzer import BaseAnalyzer
 import spacy
+import logging
 
 class TextAnalyzer(BaseAnalyzer):
-    def __init__(self):
+    def __init__(self, fit_tfidf=True, corpus=None, fit_ngrams=True):
         self.stop_words = set(stopwords.words('english'))
-        self.tfidf_vectorizer = TfidfVectorizer()
+        self.tfidf_vectorizer = TfidfVectorizer(max_features=5000)  # Limit features for efficiency
         self.model = "distilbert/distilbert-base-uncased-finetuned-sst-2-english"
-        self.sentiment_analyzer = pipeline("sentiment-analysis", model=self.model, device=0)
+        self.sentiment_analyzer = pipeline(
+            "sentiment-analysis",
+            model=self.model,
+            device=0,
+            truncation=True,       # Enable truncation
+            max_length=512         # Set maximum token length
+        )
         self.nlp = spacy.load('en_core_web_sm')
         
+        self.bigram_encoder = OneHotEncoder(handle_unknown='ignore')
+        self.trigram_encoder = OneHotEncoder(handle_unknown='ignore')
+        
+        if fit_ngrams and corpus:
+            bigrams = [bigram for text in corpus for bigram in self._extract_bigrams(text)]
+            trigrams = [trigram for text in corpus for trigram in self._extract_trigrams(text)]
+            self.bigram_encoder.fit(np.array(bigrams).reshape(-1,1))
+            self.trigram_encoder.fit(np.array(trigrams).reshape(-1,1))
+            logging.info("N-gram encoders fitted on the corpus.")
+            
+        if fit_tfidf and corpus:
+            self.tfidf_vectorizer.fit(corpus)
+            logging.info("TF-IDF vectorizer fitted on the corpus.")
+        
+    def analyze_batch(self, texts, batch_size=32):
+        """
+        Analyze a batch of texts for better performance using nlp.pipe.
+        """
+        features_list = []
+        sentiments = self.sentiment_analyzer(texts, batch_size=batch_size)
+        
+        for doc, sentiment in zip(self.nlp.pipe(texts, batch_size=batch_size, disable=["ner"]), sentiments):
+            tokens = [token.text for token in doc if not token.is_space]
+            sentences = list(doc.sents)
+            
+            features = {}
+            features.update(self._compute_basic_stats(doc.text))
+            features.update(self._compute_lexical_features(doc.text))
+            features.update(self._compute_syntactic_features(doc.text))
+            features.update(self._compute_semantic_features(doc.text))
+            features.update(self._compute_punctuation_usage(doc.text))
+            features.update(self._compute_vocabulary_richness(doc.text))
+            features.update(self._compute_pos_tags(doc.text))
+            features.update(self._compute_syntax_patterns(doc.text))
+            features.update(self._compute_ngrams(doc.text))
+            
+            features_list.append(features)
+        
+        return features_list
+    
     def analyze(self, text):
-        features = {}
-        
-        # Basic statistics
-        features.update(self._compute_basic_stats(text))
-        
-        # Lexical features
-        features.update(self._compute_lexical_features(text))
-        
-        # Syntactic features
-        features.update(self._compute_syntactic_features(text))
-        
-        # Semantic features
-        features.update(self._compute_semantic_features(text))
-        
-        # Punctuation Usage
-        features.update(self._compute_punctuation_usage(text))
-        
-        # Vocabulary Richness
-        features.update(self._compute_vocabulary_richness(text))
-        
-        # POS Tag Distribution
-        features.update(self._compute_pos_tags(text))
-        
-        # Syntax Patterns
-        features.update(self._compute_syntax_patterns(text))
-        
-        # N-grams
-        features.update(self._compute_ngrams(text))
-        
-        return features
+        """
+        Analyze a single text by utilizing the batch method.
+        """
+        return self.analyze_batch([text], batch_size=1)[0]
     
     def _compute_basic_stats(self, text):
         tokens = word_tokenize(text)
@@ -95,12 +117,12 @@ class TextAnalyzer(BaseAnalyzer):
         }
     
     def _compute_semantic_features(self, text):
-        # TF-IDF analysis
-        tfidf_matrix = self.tfidf_vectorizer.fit_transform([text])
+        # TF-IDF analysis using pre-fitted vectorizer
+        tfidf_matrix = self.tfidf_vectorizer.transform([text])
         tfidf_scores = dict(zip(self.tfidf_vectorizer.get_feature_names_out(), tfidf_matrix.toarray()[0]))
         
-        # Sentiment analysis
-        sentiment = self.sentiment_analyzer(text[:512])[0]  # Limit to 512 tokens due to model constraints
+        # Sentiment analysis with proper truncation
+        sentiment = self.sentiment_analyzer(text)[0]  # The pipeline handles truncation
         
         return {
             "top_tfidf_words": sorted(tfidf_scores.items(), key=lambda x: x[1], reverse=True)[:5],
@@ -168,19 +190,30 @@ class TextAnalyzer(BaseAnalyzer):
         
         return dependency_distribution
     
+    def _extract_bigrams(self, text):
+        tokens = word_tokenize(text.lower())
+        return list(ngrams(tokens, 2))
+    
+    def _extract_trigrams(self, text):
+        tokens = word_tokenize(text.lower())
+        return list(ngrams(tokens, 3))
+    
     def _compute_ngrams(self, text):
         tokens = word_tokenize(text.lower())
-        bigrams = list(ngrams(tokens, 2))
-        trigrams = list(ngrams(tokens, 3))
+        bigrams = self._extract_bigrams(text)
+        trigrams = self._extract_trigrams(text)
         
-        bigram_freq = FreqDist(bigrams)
-        trigram_freq = FreqDist(trigrams)
+        if bigrams:
+            bigram_encoded = self.bigram_encoder.transform(np.array(bigrams).reshape(-1,1)).sum(axis=0)
+        else:
+            bigram_encoded = np.zeros(len(self.bigram_encoder.get_feature_names_out()), dtype=np.float32)
         
-        # Get the top 5 most common bigrams and trigrams
-        top_bigrams = bigram_freq.most_common(5)
-        top_trigrams = trigram_freq.most_common(5)
+        if trigrams:
+            trigram_encoded = self.trigram_encoder.transform(np.array(trigrams).reshape(-1,1)).sum(axis=0)
+        else:
+            trigram_encoded = np.zeros(len(self.trigram_encoder.get_feature_names_out()), dtype=np.float32)
         
         return {
-            "top_bigrams": [' '.join(bigram) for bigram, freq in top_bigrams],
-            "top_trigrams": [' '.join(trigram) for trigram, freq in top_trigrams]
+            **{f"bigram_{i}": val for i, val in enumerate(bigram_encoded)},
+            **{f"trigram_{i}": val for i, val in enumerate(trigram_encoded)}
         }

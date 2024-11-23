@@ -2,6 +2,7 @@ from transformers import AutoTokenizer, AutoModel
 import torch
 import numpy as np
 from models.hybrid_classifier import HybridClassifier
+import logging
 
 class MLTextAnalyzer:
     def __init__(self):
@@ -43,7 +44,7 @@ class MLTextAnalyzer:
     
     def analyze_text(self, text_data, analyzed_report):
         # Generate transformer embeddings
-        text_embedding = self.get_text_embedding(text_data)
+        text_embedding = self.get_text_embedding_batch(text_data)
         
         # Get features
         numerical_features = self.get_text_ml_features(analyzed_report)
@@ -68,27 +69,25 @@ class MLTextAnalyzer:
         
         return combined_input
 
-    def get_text_embedding(self, text):
+    def get_text_embedding_batch(self, texts):
         # Tokenize the input text
-        inputs = self.tokenizer(
-            text,
-            return_tensors='pt',
-            truncation=True,
-            padding=True,
-            max_length=512 
-        ).to(self.device)
-
-        with torch.no_grad():
-            # Get the outputs from the transformer model
-            outputs = self.transformer_model(**inputs)
-            # Obtain the [CLS] token embedding
-            cls_embedding = outputs.last_hidden_state[:, 0, :].squeeze(0).cpu().numpy()  # Shape: (1, hidden_size)
-        
-        del inputs
-        del outputs
-        torch.cuda.empty_cache()
-        
-        return cls_embedding
+        try:
+            inputs = self.tokenizer(
+                texts,
+                return_tensors='pt',
+                padding=True,
+                truncation=True,
+                max_length=512
+            ).to(self.device)
+            
+            with torch.no_grad():
+                outputs = self.transformer_model(**inputs)
+                cls_embeddings = outputs.last_hidden_state[:, 0, :].cpu().numpy()  # Shape: (batch_size, hidden_size)
+            
+            return cls_embeddings
+        except Exception as e:
+            logging.error(f"Error generating embeddings for batch: {e}")
+            return [np.zeros(self.embedding_size, dtype=np.float32) for _ in texts]
 
     def get_text_ml_features(self, analyzed_report):
         # Extract numerical features from the report

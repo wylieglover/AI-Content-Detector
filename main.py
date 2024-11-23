@@ -1,7 +1,5 @@
-# main.py
-
 from preprocessor.preprocessor import Preprocessor
-from ml_analyzers.ml_text_analyzer import MLTextAnalyzer  # Adjust the import path as needed
+from ml_analyzers.ml_text_analyzer import MLTextAnalyzer  
 from content_analyzers.audio_analyzer import AudioAnalyzer
 from content_analyzers.text_analyzer import TextAnalyzer
 from content_analyzers.image_analyzer import ImageAnalyzer
@@ -76,7 +74,7 @@ def process_and_analyze_content(content_path_or_url, is_ai_generated=False, ml_t
             reports.append(analyzer_report)
         elif content_type == ContentType.TEXT:
             # Text Analysis
-            text_analyzer = TextAnalyzer()
+            text_analyzer = TextAnalyzer(corpus=content['data'])
             analyzer_report = text_analyzer.analyze(content['data'])
             reports.append(analyzer_report)
 
